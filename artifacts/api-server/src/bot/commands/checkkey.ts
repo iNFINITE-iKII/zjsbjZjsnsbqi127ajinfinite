@@ -2,7 +2,6 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
-  PermissionFlagsBits,
 } from "discord.js";
 import { stmtGetByKey } from "../database.js";
 import { censorKey, statusColor, statusEmoji, durationLabel } from "../utils.js";
@@ -10,7 +9,6 @@ import { censorKey, statusColor, statusEmoji, durationLabel } from "../utils.js"
 export const data = new SlashCommandBuilder()
   .setName("checkkey")
   .setDescription("Check the status and details of a license key")
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt
       .setName("key")

@@ -2,7 +2,6 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
-  PermissionFlagsBits,
 } from "discord.js";
 import { stmtGetByKey, stmtResetHwid } from "../database.js";
 import { censorKey } from "../utils.js";
@@ -12,7 +11,6 @@ export const data = new SlashCommandBuilder()
   .setDescription(
     "Reset HWID binding for a license key (allows migration to new hardware)"
   )
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt.setName("key").setDescription("The license key").setRequired(true)
   );

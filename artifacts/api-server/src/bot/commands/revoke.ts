@@ -2,7 +2,6 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
-  PermissionFlagsBits,
 } from "discord.js";
 import { stmtGetByKey, stmtRevoke } from "../database.js";
 import { censorKey } from "../utils.js";
@@ -10,7 +9,6 @@ import { censorKey } from "../utils.js";
 export const data = new SlashCommandBuilder()
   .setName("revoke")
   .setDescription("Permanently revoke a license key, blocking all future access")
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt.setName("key").setDescription("The license key to revoke").setRequired(true)
   );

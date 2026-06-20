@@ -2,7 +2,6 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   EmbedBuilder,
-  PermissionFlagsBits,
 } from "discord.js";
 import { randomUUID } from "crypto";
 import { db, stmtInsert, stmtGetByKey } from "../database.js";
@@ -11,7 +10,6 @@ import { generateLicenseKey, durationLabel } from "../utils.js";
 export const data = new SlashCommandBuilder()
   .setName("genkey")
   .setDescription("Generate new license key(s)")
-  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption((opt) =>
     opt
       .setName("type")
