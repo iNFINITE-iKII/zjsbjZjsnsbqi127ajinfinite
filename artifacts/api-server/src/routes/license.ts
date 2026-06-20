@@ -7,15 +7,113 @@ const router = Router();
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error: "Too many requests",
-    code: "RATE_LIMITED",
-  },
+  message: { status: "error", message: "Too many requests. Try again later." },
 });
 
+// ─────────────────────────────────────────────────────────────
+// Core verification logic (shared by both endpoints)
+// ─────────────────────────────────────────────────────────────
+function verifyLicense(
+  licenseKey: string,
+  hwid: string
+):
+  | { ok: true; code: string; expires_at: number | null; duration_type: string }
+  | { ok: false; status: number; message: string; code: string } {
+  const key = licenseKey.trim().toUpperCase();
+  const license = stmtGetByKey.get(key);
+
+  if (!license) {
+    return { ok: false, status: 404, message: "Key tidak ditemukan.", code: "NOT_FOUND" };
+  }
+
+  if (license.status === "REVOKED") {
+    return { ok: false, status: 403, message: "Key telah dicabut oleh admin.", code: "REVOKED" };
+  }
+
+  const now = Date.now();
+
+  if (license.expires_at !== null && now > license.expires_at) {
+    stmtExpire.run(key);
+    return { ok: false, status: 401, message: "Key sudah kadaluarsa.", code: "EXPIRED" };
+  }
+
+  if (license.status === "EXPIRED") {
+    return { ok: false, status: 401, message: "Key sudah kadaluarsa.", code: "EXPIRED" };
+  }
+
+  if (license.status === "UNUSED") {
+    const durationMs =
+      license.duration_type === "PERMANENT"
+        ? null
+        : getDurationMs(license.duration_type, license.duration_value);
+    const expiresAt = durationMs !== null ? now + durationMs : null;
+
+    stmtActivate.run(hwid, expiresAt as number, key);
+
+    return {
+      ok: true,
+      code: "ACTIVATED",
+      expires_at: expiresAt,
+      duration_type: license.duration_type,
+    };
+  }
+
+  if (license.status === "ACTIVE") {
+    if (license.hwid_hash !== hwid) {
+      return {
+        ok: false,
+        status: 403,
+        message: "HWID tidak cocok. Key terikat ke perangkat lain.",
+        code: "HWID_MISMATCH",
+      };
+    }
+    return {
+      ok: true,
+      code: "AUTHORIZED",
+      expires_at: license.expires_at,
+      duration_type: license.duration_type,
+    };
+  }
+
+  return { ok: false, status: 500, message: "Status tidak diketahui.", code: "INTERNAL_ERROR" };
+}
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/license/check?key=KEY&hwid=HWID
+// ← Format yang digunakan script Roblox/Lua
+// ─────────────────────────────────────────────────────────────
+router.get("/check", limiter, (req, res) => {
+  const key = req.query["key"] as string | undefined;
+  const hwid = (req.query["hwid"] as string | undefined) ?? "UNKNOWN";
+
+  if (!key) {
+    res.status(400).json({ status: "error", message: "Parameter 'key' wajib diisi." });
+    return;
+  }
+
+  const result = verifyLicense(key, hwid);
+
+  if (!result.ok) {
+    res.status(result.status).json({ status: "error", message: result.message, code: result.code });
+    return;
+  }
+
+  res.status(200).json({
+    status: "success",
+    message: "Akses diberikan.",
+    code: result.code,
+    duration_type: result.duration_type,
+    expires_at: result.expires_at,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/license/activate
+// ← Format standar untuk software klien desktop/lainnya
+// ─────────────────────────────────────────────────────────────
 router.post("/activate", limiter, (req, res) => {
   const { license_key, hwid } = req.body as {
     license_key?: string;
@@ -31,73 +129,20 @@ router.post("/activate", limiter, (req, res) => {
     return;
   }
 
-  const key = license_key.trim().toUpperCase();
-  const license = stmtGetByKey.get(key);
+  const result = verifyLicense(license_key, hwid);
 
-  if (!license) {
-    res.status(404).json({ error: "License key not found", code: "NOT_FOUND" });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.message, code: result.code });
     return;
   }
 
-  if (license.status === "REVOKED") {
-    res.status(403).json({ error: "License key has been revoked", code: "REVOKED" });
-    return;
-  }
-
-  const now = Date.now();
-
-  if (license.expires_at !== null && now > license.expires_at) {
-    stmtExpire.run(key);
-    res.status(401).json({ error: "License key has expired", code: "EXPIRED" });
-    return;
-  }
-
-  if (license.status === "EXPIRED") {
-    res.status(401).json({ error: "License key has expired", code: "EXPIRED" });
-    return;
-  }
-
-  if (license.status === "UNUSED") {
-    const durationMs =
-      license.duration_type === "PERMANENT"
-        ? null
-        : getDurationMs(license.duration_type, license.duration_value);
-    const expiresAt = durationMs !== null ? now + durationMs : null;
-
-    stmtActivate.run(hwid, expiresAt as number, key);
-
-    res.status(200).json({
-      success: true,
-      code: "ACTIVATED",
-      license_key: key,
-      duration_type: license.duration_type,
-      expires_at: expiresAt,
-      hwid_bound: hwid,
-    });
-    return;
-  }
-
-  if (license.status === "ACTIVE") {
-    if (license.hwid_hash !== hwid) {
-      res.status(403).json({
-        error: "HWID mismatch — this license is bound to a different device",
-        code: "HWID_MISMATCH",
-      });
-      return;
-    }
-
-    res.status(200).json({
-      success: true,
-      code: "AUTHORIZED",
-      license_key: key,
-      duration_type: license.duration_type,
-      expires_at: license.expires_at,
-      hwid_bound: license.hwid_hash,
-    });
-    return;
-  }
-
-  res.status(500).json({ error: "Unexpected license state", code: "INTERNAL_ERROR" });
+  res.status(200).json({
+    success: true,
+    code: result.code,
+    license_key: license_key.trim().toUpperCase(),
+    duration_type: result.duration_type,
+    expires_at: result.expires_at,
+  });
 });
 
 export default router;

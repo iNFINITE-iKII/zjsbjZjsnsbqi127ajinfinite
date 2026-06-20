@@ -1,0 +1,321 @@
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+
+-- Lindungi dari eksekusi ganda agar tidak tumpang tindih
+if CoreGui:FindFirstChild("KiiBooKeySystemModern") then
+    CoreGui.KiiBooKeySystemModern:Destroy()
+end
+
+-- ==========================================
+-- KONFIGURASI URL SERVER API
+-- ==========================================
+local ServerURL = "https://workspaceapi-server-production-d63d.up.railway.app/api/check?key="
+
+-- ==========================================
+-- KONFIGURASI TEMA WARNA
+-- ==========================================
+local Theme = {
+    Background = Color3.fromRGB(15, 15, 15),
+    TopBar = Color3.fromRGB(25, 25, 25),
+    Input = Color3.fromRGB(30, 30, 30),
+    Accent = Color3.fromRGB(0, 195, 255),
+    Success = Color3.fromRGB(0, 255, 130),
+    Error = Color3.fromRGB(255, 60, 60),
+    Text = Color3.fromRGB(240, 240, 240),
+    TextSecondary = Color3.fromRGB(180, 180, 180),
+}
+
+-- ==========================================
+-- PEMBUATAN OBJEK UI
+-- ==========================================
+
+local KeySystemUI = Instance.new("ScreenGui")
+KeySystemUI.Name = "KiiBooKeySystemModern"
+KeySystemUI.Parent = CoreGui
+KeySystemUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = KeySystemUI
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.ClipsDescendants = true
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Thickness = 1
+MainStroke.Color = Theme.Accent
+MainStroke.Transparency = 0.8
+MainStroke.Parent = MainFrame
+
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 35)
+TopBar.BackgroundColor3 = Theme.TopBar
+TopBar.BorderSizePixel = 0
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 12)
+TopCorner.Parent = TopBar
+
+local TopBarOverlap = Instance.new("Frame")
+TopBarOverlap.Parent = TopBar
+TopBarOverlap.Size = UDim2.new(1, 0, 0.5, 0)
+TopBarOverlap.Position = UDim2.new(0, 0, 0.5, 0)
+TopBarOverlap.BackgroundColor3 = Theme.TopBar
+TopBarOverlap.BorderSizePixel = 0
+
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.Size = UDim2.new(1, -15, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "XiFil Hub"
+Title.TextColor3 = Theme.Text
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamMedium
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Parent = MainFrame
+ContentContainer.BackgroundTransparency = 1
+ContentContainer.Size = UDim2.new(1, 0, 1, -35)
+ContentContainer.Position = UDim2.new(0, 0, 0, 35)
+
+local UIPadding = Instance.new("UIPadding")
+UIPadding.Parent = ContentContainer
+UIPadding.PaddingTop = UDim.new(0, 20)
+UIPadding.PaddingLeft = UDim.new(0, 25)
+UIPadding.PaddingRight = UDim.new(0, 25)
+UIPadding.PaddingBottom = UDim.new(0, 15)
+
+local SubTitle = Instance.new("TextLabel")
+SubTitle.Parent = ContentContainer
+SubTitle.Size = UDim2.new(1, 0, 0, 20)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "Please enter your access key to continue."
+SubTitle.TextColor3 = Theme.TextSecondary
+SubTitle.TextSize = 12
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local KeyInput = Instance.new("TextBox")
+KeyInput.Parent = ContentContainer
+KeyInput.Size = UDim2.new(1, 0, 0, 40)
+KeyInput.Position = UDim2.new(0, 0, 0, 30)
+KeyInput.BackgroundColor3 = Theme.Input
+KeyInput.TextColor3 = Theme.Text
+KeyInput.PlaceholderText = "Enter Key" 
+KeyInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+KeyInput.TextSize = 13
+KeyInput.Font = Enum.Font.Gotham
+KeyInput.ClearTextOnFocus = false
+KeyInput.Text = "" 
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 8)
+InputCorner.Parent = KeyInput
+
+local InputStroke = Instance.new("UIStroke")
+InputStroke.Thickness = 1
+InputStroke.Color = Color3.fromRGB(50, 50, 50)
+InputStroke.Parent = KeyInput
+
+local CheckBtn = Instance.new("TextButton")
+CheckBtn.Parent = ContentContainer
+CheckBtn.Size = UDim2.new(1, 0, 0, 40)
+CheckBtn.Position = UDim2.new(0, 0, 0, 80)
+CheckBtn.BackgroundColor3 = Theme.Accent
+CheckBtn.TextColor3 = Color3.fromRGB(20, 20, 20)
+CheckBtn.Text = "Verify Access"
+CheckBtn.TextSize = 14
+CheckBtn.Font = Enum.Font.GothamBold
+CheckBtn.AutoButtonColor = false
+
+local CheckCorner = Instance.new("UICorner")
+CheckCorner.CornerRadius = UDim.new(0, 8)
+CheckCorner.Parent = CheckBtn
+
+local CheckGradient = Instance.new("UIGradient")
+CheckGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(1, Theme.Accent)
+})
+CheckGradient.Rotation = 90
+CheckGradient.Transparency = NumberSequence.new(0.6, 1)
+CheckGradient.Parent = CheckBtn
+
+local BottomButtons = Instance.new("Frame")
+BottomButtons.Parent = ContentContainer
+BottomButtons.BackgroundTransparency = 1
+BottomButtons.Size = UDim2.new(1, 0, 0, 30)
+BottomButtons.Position = UDim2.new(0, 0, 1, -30)
+
+local GetKeyBtn = Instance.new("TextButton")
+GetKeyBtn.Parent = BottomButtons
+GetKeyBtn.Size = UDim2.new(0, 120, 1, 0)
+GetKeyBtn.BackgroundTransparency = 1
+GetKeyBtn.TextColor3 = Theme.Accent
+GetKeyBtn.Text = "Get Free Key"
+GetKeyBtn.TextSize = 12
+GetKeyBtn.Font = Enum.Font.GothamMedium
+GetKeyBtn.TextXAlignment = Enum.TextXAlignment.Left
+
+local BuyPremiumBtn = Instance.new("TextButton")
+BuyPremiumBtn.Parent = BottomButtons
+BuyPremiumBtn.Size = UDim2.new(0, 120, 1, 0)
+BuyPremiumBtn.Position = UDim2.new(1, -120, 0, 0)
+BuyPremiumBtn.BackgroundTransparency = 1
+BuyPremiumBtn.TextColor3 = Theme.Success
+BuyPremiumBtn.Text = "Buy Premium 💎"
+BuyPremiumBtn.TextSize = 12
+BuyPremiumBtn.Font = Enum.Font.GothamMedium
+BuyPremiumBtn.TextXAlignment = Enum.TextXAlignment.Right
+
+-- ==========================================
+-- LOGIKA & ANIMASI (HWID & API INTEGRATION)
+-- ==========================================
+
+local function AnimateColor(instance, property, color, time)
+    local tweenInfo = TweenInfo.new(time or 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(instance, tweenInfo, {[property] = color})
+    tween:Play()
+    return tween
+end
+
+-- Animasi Masuk
+TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 380, 0, 240)}):Play()
+
+KeyInput.Focused:Connect(function()
+    AnimateColor(InputStroke, "Color", Theme.Accent, 0.2)
+end)
+
+KeyInput.FocusLost:Connect(function()
+    AnimateColor(InputStroke, "Color", Color3.fromRGB(50, 50, 50), 0.2)
+end)
+
+CheckBtn.MouseEnter:Connect(function()
+    AnimateColor(CheckBtn, "BackgroundColor3", Color3.fromRGB(50, 215, 255), 0.2)
+end)
+
+CheckBtn.MouseLeave:Connect(function()
+    AnimateColor(CheckBtn, "BackgroundColor3", Theme.Accent, 0.2)
+end)
+
+-- Logika Verifikasi Utama
+local isChecking = false
+CheckBtn.MouseButton1Click:Connect(function()
+    if isChecking then return end
+    local input = KeyInput.Text
+
+    if input == "" then
+        AnimateColor(InputStroke, "Color", Theme.Error, 0.2)
+        task.wait(1)
+        AnimateColor(InputStroke, "Color", Theme.Accent, 0.2)
+        return
+    end
+
+    isChecking = true
+    CheckBtn.Text = "Verifying with Server..."
+    AnimateColor(CheckBtn, "BackgroundColor3", Theme.TopBar, 0.3)
+    AnimateColor(CheckBtn, "TextColor3", Theme.TextSecondary, 0.3)
+
+    -- 1. Mendapatkan HWID Pemain
+    local playerHWID = "UNKNOWN"
+    pcall(function()
+        if gethwid then
+            playerHWID = gethwid()
+        else
+            playerHWID = game:GetService("RbxAnalyticsService"):GetClientId()
+        end
+    end)
+
+    -- 2. Membentuk URL lengkap dengan Key dan HWID
+    local fetchURL = ServerURL .. input .. "&hwid=" .. playerHWID
+
+    -- 3. Meminta validasi ke server API Replit/Railway
+    local success, response = pcall(function()
+        return game:HttpGet(fetchURL)
+    end)
+
+    if success then
+        local data = HttpService:JSONDecode(response)
+
+        if data.status == "success" then
+            CheckBtn.Text = "Access Granted!"
+            AnimateColor(CheckBtn, "BackgroundColor3", Theme.Success, 0.3)
+            AnimateColor(CheckBtn, "TextColor3", Color3.fromRGB(20, 20, 20), 0.3)
+            AnimateColor(MainStroke, "Color", Theme.Success, 0.5)
+
+            task.wait(1)
+            TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Size = UDim2.new(0, 0, 0, 0),
+                Position = UDim2.new(0.5, 0, 0.5, 50)
+            }):Play()
+            task.wait(0.3)
+            KeySystemUI:Destroy()
+            
+            -- ========================================================
+            -- EKSEKUSI SCRIPT UTAMA SOUL-IRON DI SINI
+            -- (Posisinya sekarang aman di dalam pengecekan "success")
+            -- ========================================================
+            print("Sistem Valid! Memuat Soul-Iron V1...")
+            
+            local loadSuccess, loadError = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/iNFINITE-iKII/Soul-Iron/refs/heads/main/V1"))()
+            end)
+            
+            if not loadSuccess then
+                warn("Gagal memuat script utama: " .. tostring(loadError))
+            end
+            
+        else
+            CheckBtn.Text = data.message or "Invalid or Expired Key"
+            AnimateColor(CheckBtn, "BackgroundColor3", Theme.Error, 0.3)
+            AnimateColor(CheckBtn, "TextColor3", Theme.Text, 0.3)
+            AnimateColor(MainStroke, "Color", Theme.Error, 0.3)
+
+            task.wait(1.5)
+            CheckBtn.Text = "Verify Access"
+            AnimateColor(CheckBtn, "BackgroundColor3", Theme.Accent, 0.3)
+            AnimateColor(CheckBtn, "TextColor3", Color3.fromRGB(20, 20, 20), 0.3)
+            AnimateColor(MainStroke, "Color", Theme.Accent, 0.5)
+        end
+    else
+        CheckBtn.Text = "Server Offline / Error!"
+        AnimateColor(CheckBtn, "BackgroundColor3", Theme.Error, 0.3)
+        AnimateColor(CheckBtn, "TextColor3", Theme.Text, 0.3)
+        AnimateColor(MainStroke, "Color", Theme.Error, 0.3)
+        
+        task.wait(2)
+        CheckBtn.Text = "Verify Access"
+        AnimateColor(CheckBtn, "BackgroundColor3", Theme.Accent, 0.3)
+        AnimateColor(CheckBtn, "TextColor3", Color3.fromRGB(20, 20, 20), 0.3)
+        AnimateColor(MainStroke, "Color", Theme.Accent, 0.5)
+    end
+    
+    isChecking = false
+end)
+
+-- Tombol Interaksi Link
+GetKeyBtn.MouseButton1Click:Connect(function()
+    setclipboard("https://lootdest.org/s?tTSBArFx")
+    GetKeyBtn.Text = "Link Copied!"
+    task.wait(1.5)
+    GetKeyBtn.Text = "Get Free Key"
+end)
+
+BuyPremiumBtn.MouseButton1Click:Connect(function()
+    setclipboard("https://discord.gg/link-server-kamu")
+    BuyPremiumBtn.Text = "Discord Copied!"
+    task.wait(1.5)
+    BuyPremiumBtn.Text = "Buy Premium 💎"
+end)
