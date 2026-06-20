@@ -3,7 +3,7 @@
 --// API Server: ganti SERVER_URL dengan URL Replit kamu
 --------------------------------------------------------------------------------
 
-local SERVER_URL  = "https://5e61c234-e9f5-4d84-b330-b19a74387cc5-00-3gsz2zsomfxoe.sisko.replit.dev"
+local SERVER_URL  = "htpps://xifil-hub-production.up.railway.app"
 local KEY_FILE    = "XiFilPro_Configs/license.key"
 local FOLDER_NAME = "XiFilPro_Configs"
 
