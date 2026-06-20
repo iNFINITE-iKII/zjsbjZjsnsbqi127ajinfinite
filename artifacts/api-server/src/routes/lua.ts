@@ -5,20 +5,55 @@ import path from "node:path";
 
 const router = Router();
 
-// Resolve path ke folder lua/ satu level di atas dist/ (saat sudah di-build)
-// Source: src/routes/lua.ts -> dist/index.mjs -> ../lua/drm_wrapper.lua
-const LUA_FILE = path.resolve(
+const LUA_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../lua/drm_wrapper.lua"
+  "../lua/games"
 );
 
-router.get("/loader", async (_req, res) => {
+// Hanya izinkan nama game: huruf, angka, underscore, strip (keamanan path traversal)
+const VALID_GAME_NAME = /^[a-z0-9_-]{1,64}$/i;
+
+router.get("/loader", async (req, res) => {
+  const game = (req.query["game"] as string | undefined)?.trim();
+
+  if (!game) {
+    res
+      .status(400)
+      .send(
+        '-- ERROR: Parameter "game" wajib diisi.\n-- Contoh: /api/lua/loader?game=soul_iron'
+      );
+    return;
+  }
+
+  if (!VALID_GAME_NAME.test(game)) {
+    res.status(400).send('-- ERROR: Nama game tidak valid.');
+    return;
+  }
+
+  const filePath = path.join(LUA_DIR, `${game}.lua`);
+
   try {
-    const content = await readFile(LUA_FILE, "utf-8");
+    const content = await readFile(filePath, "utf-8");
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.send(content);
   } catch {
-    res.status(500).send("-- ERROR: Gagal memuat script loader.");
+    res
+      .status(404)
+      .send(`-- ERROR: Script untuk game "${game}" tidak ditemukan.`);
+  }
+});
+
+// Daftar game yang tersedia
+router.get("/games", async (_req, res) => {
+  const { readdir } = await import("node:fs/promises");
+  try {
+    const files = await readdir(LUA_DIR);
+    const games = files
+      .filter((f) => f.endsWith(".lua"))
+      .map((f) => f.replace(".lua", ""));
+    res.json({ games });
+  } catch {
+    res.json({ games: [] });
   }
 });
 
