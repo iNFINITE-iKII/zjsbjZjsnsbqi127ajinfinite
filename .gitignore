@@ -49,3 +49,6 @@ Thumbs.db
 .local/
 .replit
 replit.nix
+
+# Auto-attached assets from Replit chat (screenshots, temp files)
+attached_assets/
