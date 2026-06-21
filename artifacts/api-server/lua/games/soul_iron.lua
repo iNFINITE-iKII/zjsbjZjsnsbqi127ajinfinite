@@ -1847,7 +1847,7 @@ end)
 -- Semua input Forge dihapus (nilai sudah tetap 1), Claim dihapus.
 -- Ditambah 5 tombol utility (Enchantment, Grocery, dll)
 --------------------------------------------------------------------------------
-local ForgePage=CreateTab("🔨 Forge",7)
+local ForgePage=CreateTab("🔨 Forge & NPC ",7)
 
 -- Forge QTE hook berjalan otomatis di background (nilai tetap 1)
 local ForgeUtil=require(Services.ReplicatedStorage:WaitForChild("Framework"):WaitForChild("Features"):WaitForChild("ForgeSystem"):WaitForChild("ForgeUtil"))
