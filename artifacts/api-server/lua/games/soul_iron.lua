@@ -1278,7 +1278,7 @@ TBH.Size=UDim2.new(1,0,0,10); TBH.Position=UDim2.new(0,0,1,-10)
 
 local Title=Instance.new("TextLabel"); Title.Parent=TopBar; Title.BackgroundTransparency=1
 Title.Position=UDim2.new(0,16,0,0); Title.Size=UDim2.new(1,-32,1,0); Title.Font=Enum.Font.GothamBold
-Title.Text='XiFil PRO <font color="#ffffff">// V4 ENGINE</font>'; Title.RichText=true
+Title.Text='XiFil Hub PRO <font color="#ffffff">// IRON SOUL V3</font>'; Title.RichText=true
 Title.TextColor3=Color3.fromRGB(96,205,255); Title.TextSize=14; Title.TextXAlignment=Enum.TextXAlignment.Left
 
 local TabSystemFrame=Instance.new("Frame"); TabSystemFrame.Name="TabSystem"; TabSystemFrame.Parent=MainWindow
