@@ -701,6 +701,9 @@ export async function handleApproveTicketModal(interaction: ModalSubmitInteracti
     }
   }
 
+  // Save pending ticket data BEFORE removing it from DB
+  const pendingTicket = await getPendingTicket(targetUserId).catch(() => null);
+
   // Try to assign VIP role
   try {
     const guild = interaction.guild!;
@@ -763,12 +766,12 @@ export async function handleApproveTicketModal(interaction: ModalSubmitInteracti
   } catch { /* DM might be blocked */ }
 
   // Edit the original ticket message to mark as approved (remove buttons)
+  // Uses data saved before removePendingTicket was called
   try {
-    const pending = await getPendingTicket(targetUserId).catch(() => null);
-    if (pending) {
-      const ch = interaction.guild?.channels.cache.get(pending.channel_id) as TextChannel | undefined;
+    if (pendingTicket) {
+      const ch = interaction.guild?.channels.cache.get(pendingTicket.channel_id) as TextChannel | undefined;
       if (ch) {
-        const msg = await ch.messages.fetch(pending.message_id).catch(() => null);
+        const msg = await ch.messages.fetch(pendingTicket.message_id).catch(() => null);
         if (msg) {
           await msg.edit({
             embeds: [
@@ -818,6 +821,9 @@ async function handleRejectTicket(interaction: ButtonInteraction): Promise<void>
 
   const targetUserId = interaction.customId.replace("reject_ticket_", "");
 
+  // Save pending ticket data BEFORE removing it from DB
+  const pendingTicket = await getPendingTicket(targetUserId).catch(() => null);
+
   await removePendingTicket(targetUserId);
   await logTicketRejected(targetUserId, interaction.user.id);
 
@@ -843,28 +849,24 @@ async function handleRejectTicket(interaction: ButtonInteraction): Promise<void>
     }
   } catch { /* DM might be blocked */ }
 
-  // Edit original ticket message (remove buttons)
+  // Edit original ticket message using stored channel_id + message_id (reliable)
   try {
-    const ch = interaction.channel;
-    if (ch && ch.isTextBased()) {
-      const messages = await (ch as TextChannel).messages.fetch({ limit: 50 });
-      const ticketMsg = messages.find(
-        (m) => m.author.bot && m.components.length > 0 &&
-          m.components[0]?.components.some(
-            (c) => c.type === 2 && "customId" in c && (c as { customId: string }).customId === `reject_ticket_${targetUserId}`
-          )
-      );
-      if (ticketMsg) {
-        await ticketMsg.edit({
-          embeds: [
-            ...ticketMsg.embeds,
-            new EmbedBuilder()
-              .setColor(0xd50000)
-              .setDescription(`❌ **Ditolak** oleh <@${interaction.user.id}> • <t:${Math.floor(Date.now() / 1000)}:R>`)
-              .toJSON() as Parameters<typeof ticketMsg.edit>[0]["embeds"] extends Array<infer T> ? T : never,
-          ],
-          components: [],
-        });
+    if (pendingTicket) {
+      const ch = interaction.guild?.channels.cache.get(pendingTicket.channel_id) as TextChannel | undefined;
+      if (ch) {
+        const msg = await ch.messages.fetch(pendingTicket.message_id).catch(() => null);
+        if (msg) {
+          await msg.edit({
+            embeds: [
+              ...msg.embeds,
+              new EmbedBuilder()
+                .setColor(0xd50000)
+                .setDescription(`❌ **Ditolak** oleh <@${interaction.user.id}> • <t:${Math.floor(Date.now() / 1000)}:R>`)
+                .toJSON() as Parameters<typeof msg.edit>[0]["embeds"] extends Array<infer T> ? T : never,
+            ],
+            components: [],
+          });
+        }
       }
     }
   } catch { /* best-effort */ }
