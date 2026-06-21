@@ -5,6 +5,7 @@ import {
   PermissionFlagsBits,
 } from "discord.js";
 import { getByKey, revokeLicense } from "../database.js";
+import { logRevoke } from "../../lib/discordLogger.js";
 import { censorKey } from "../utils.js";
 
 export const data = new SlashCommandBuilder()
@@ -48,6 +49,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
   }
 
   await revokeLicense(key);
+  await logRevoke(key, interaction.user.id);
 
   await interaction.editReply({
     embeds: [

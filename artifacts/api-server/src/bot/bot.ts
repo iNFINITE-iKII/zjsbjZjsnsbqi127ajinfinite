@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits } from "discord.js";
 import { logger } from "../lib/logger.js";
 import { onReady } from "./events/ready.js";
 import { onInteractionCreate } from "./events/interactionCreate.js";
+import { setClient } from "./clientRef.js";
 
 export function startBot(): void {
   const token = process.env["DISCORD_BOT_TOKEN"];
@@ -13,6 +14,8 @@ export function startBot(): void {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
   });
+
+  setClient(client);
 
   client.once("ready", () => onReady(client));
   client.on("interactionCreate", onInteractionCreate);

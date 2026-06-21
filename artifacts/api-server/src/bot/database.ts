@@ -32,6 +32,8 @@ export interface License {
   max_hwid_resets: number;
   hwid_reset_count: number;
   hwid_reset_period: "DAILY" | "WEEKLY" | "MONTHLY" | "UNLIMITED";
+  label: string | null;
+  notified_expire: boolean;
 }
 
 export interface WhitelistEntry {
@@ -58,6 +60,20 @@ export interface HwidResetLog {
   reset_at: number;
 }
 
+export interface LicenseStats {
+  total: number;
+  active: number;
+  unused: number;
+  expired: number;
+  revoked: number;
+}
+
+export interface ExpiringKeyRow {
+  license_key: string;
+  expires_at: number;
+  discord_user_id: string;
+}
+
 export async function initDb(): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS licenses (
@@ -72,12 +88,16 @@ export async function initDb(): Promise<void> {
       created_at BIGINT NOT NULL,
       max_hwid_resets INT DEFAULT -1,
       hwid_reset_count INT DEFAULT 0,
-      hwid_reset_period TEXT DEFAULT 'WEEKLY'
+      hwid_reset_period TEXT DEFAULT 'WEEKLY',
+      label TEXT DEFAULT NULL,
+      notified_expire BOOLEAN DEFAULT FALSE
     )
   `;
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_resets INT DEFAULT -1`;
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_count INT DEFAULT 0`;
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_period TEXT DEFAULT 'WEEKLY'`;
+  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS label TEXT DEFAULT NULL`;
+  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS notified_expire BOOLEAN DEFAULT FALSE`;
   await sql`CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)`;
 
   await sql`
@@ -196,12 +216,99 @@ export async function setMaxHwidResets(
   `;
 }
 
+export async function setKeyLabel(licenseKey: string, label: string | null): Promise<void> {
+  await sql`
+    UPDATE licenses SET label = ${label} WHERE license_key = ${licenseKey}
+  `;
+}
+
+export async function renewLicense(
+  licenseKey: string,
+  durationType: string,
+  durationValue: number,
+  expiresAt: number | null,
+  status: string
+): Promise<void> {
+  await sql`
+    UPDATE licenses
+    SET duration_type = ${durationType}, duration_value = ${durationValue},
+        expires_at = ${expiresAt}, status = ${status}, notified_expire = FALSE
+    WHERE license_key = ${licenseKey}
+  `;
+}
+
 export async function deleteLicense(licenseKey: string): Promise<void> {
   await sql.begin(async (tx) => {
     await tx`DELETE FROM hwid_reset_log WHERE license_key = ${licenseKey}`;
     await tx`DELETE FROM user_keys WHERE license_key = ${licenseKey}`;
     await tx`DELETE FROM licenses WHERE license_key = ${licenseKey}`;
   });
+}
+
+export async function getLicenseStats(): Promise<LicenseStats> {
+  const rows = await sql<Array<{
+    total: string;
+    active: string;
+    unused: string;
+    expired: string;
+    revoked: string;
+  }>>`
+    SELECT
+      COUNT(*)::text AS total,
+      COUNT(*) FILTER (WHERE status = 'ACTIVE')::text AS active,
+      COUNT(*) FILTER (WHERE status = 'UNUSED')::text AS unused,
+      COUNT(*) FILTER (WHERE status = 'EXPIRED')::text AS expired,
+      COUNT(*) FILTER (WHERE status = 'REVOKED')::text AS revoked
+    FROM licenses
+  `;
+  const r = rows[0]!;
+  return {
+    total: Number(r.total),
+    active: Number(r.active),
+    unused: Number(r.unused),
+    expired: Number(r.expired),
+    revoked: Number(r.revoked),
+  };
+}
+
+export async function getExpiringKeys(
+  now: number,
+  cutoff: number
+): Promise<ExpiringKeyRow[]> {
+  return sql<ExpiringKeyRow[]>`
+    SELECT l.license_key, l.expires_at, uk.discord_user_id
+    FROM licenses l
+    JOIN user_keys uk ON uk.license_key = l.license_key
+    WHERE l.status = 'ACTIVE'
+      AND l.expires_at IS NOT NULL
+      AND l.expires_at > ${now}
+      AND l.expires_at < ${cutoff}
+      AND l.notified_expire = FALSE
+  `;
+}
+
+export async function markNotifiedExpire(licenseKey: string): Promise<void> {
+  await sql`
+    UPDATE licenses SET notified_expire = TRUE WHERE license_key = ${licenseKey}
+  `;
+}
+
+export async function cleanupOldKeys(cutoffCreatedAt: number): Promise<number> {
+  const keys = await sql<{ license_key: string }[]>`
+    SELECT license_key FROM licenses
+    WHERE status IN ('EXPIRED', 'REVOKED') AND created_at < ${cutoffCreatedAt}
+  `;
+  if (keys.length === 0) return 0;
+
+  await sql.begin(async (tx) => {
+    for (const { license_key } of keys) {
+      await tx`DELETE FROM hwid_reset_log WHERE license_key = ${license_key}`;
+      await tx`DELETE FROM user_keys WHERE license_key = ${license_key}`;
+      await tx`DELETE FROM licenses WHERE license_key = ${license_key}`;
+    }
+  });
+
+  return keys.length;
 }
 
 // ─── Whitelist functions ───────────────────────────────────────────────────
@@ -292,6 +399,12 @@ export async function getKeyOwner(licenseKey: string): Promise<UserKey | null> {
     SELECT * FROM user_keys WHERE license_key = ${licenseKey}
   `;
   return rows[0] ?? null;
+}
+
+export async function transferKey(licenseKey: string, newUserId: string): Promise<void> {
+  await sql`
+    UPDATE user_keys SET discord_user_id = ${newUserId} WHERE license_key = ${licenseKey}
+  `;
 }
 
 // ─── HWID Reset Log functions ──────────────────────────────────────────────

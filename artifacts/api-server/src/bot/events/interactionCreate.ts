@@ -16,6 +16,12 @@ import * as setmaxhwid from "../commands/setmaxhwid.js";
 import * as userkey from "../commands/userkey.js";
 import * as panel from "../commands/panel.js";
 import * as deletekey from "../commands/deletekey.js";
+import * as stats from "../commands/stats.js";
+import * as renewkey from "../commands/renewkey.js";
+import * as transferkey from "../commands/transferkey.js";
+import * as setlabel from "../commands/setlabel.js";
+import * as cleanup from "../commands/cleanup.js";
+import * as help from "../commands/help.js";
 import { handleButton, handleResetHwidModal } from "../handlers/buttonHandler.js";
 
 const commandMap = new Map([
@@ -29,15 +35,18 @@ const commandMap = new Map([
   ["userkey", userkey],
   ["panel", panel],
   ["deletekey", deletekey],
+  ["stats", stats],
+  ["renewkey", renewkey],
+  ["transferkey", transferkey],
+  ["setlabel", setlabel],
+  ["cleanup", cleanup],
+  ["help", help],
 ]);
 
 export async function onInteractionCreate(interaction: Interaction): Promise<void> {
   // ─── Button ────────────────────────────────────────────────────────────
   if (interaction.isButton()) {
-    logger.info(
-      { user: interaction.user.tag, button: interaction.customId },
-      "Button clicked"
-    );
+    logger.info({ user: interaction.user.tag, button: interaction.customId }, "Button clicked");
     try {
       await handleButton(interaction as ButtonInteraction);
     } catch (err) {
@@ -60,10 +69,7 @@ export async function onInteractionCreate(interaction: Interaction): Promise<voi
   // ─── Modal Submit ──────────────────────────────────────────────────────
   if (interaction.isModalSubmit()) {
     const modal = interaction as ModalSubmitInteraction;
-    logger.info(
-      { user: interaction.user.tag, modal: modal.customId },
-      "Modal submitted"
-    );
+    logger.info({ user: interaction.user.tag, modal: modal.customId }, "Modal submitted");
     try {
       if (modal.customId === "reset_hwid_modal") {
         await handleResetHwidModal(modal);
@@ -90,10 +96,7 @@ export async function onInteractionCreate(interaction: Interaction): Promise<voi
   const cmd = commandMap.get(interaction.commandName);
   if (!cmd) return;
 
-  logger.info(
-    { user: interaction.user.tag, command: interaction.commandName },
-    "Command executed"
-  );
+  logger.info({ user: interaction.user.tag, command: interaction.commandName }, "Command executed");
 
   try {
     await cmd.execute(interaction as ChatInputCommandInteraction);

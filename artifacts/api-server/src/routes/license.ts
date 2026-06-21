@@ -2,6 +2,11 @@ import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { getByKey, activateLicense, expireLicense } from "../bot/database.js";
 import { getDurationMs } from "../bot/utils.js";
+import {
+  logKeyActivated,
+  logKeyExpired,
+  logHwidMismatch,
+} from "../lib/discordLogger.js";
 
 const router = Router();
 
@@ -13,9 +18,6 @@ const limiter = rateLimit({
   message: { status: "error", message: "Too many requests. Try again later." },
 });
 
-// ─────────────────────────────────────────────────────────────
-// Core verification logic (shared by both endpoints)
-// ─────────────────────────────────────────────────────────────
 async function verifyLicense(
   licenseKey: string,
   hwid: string
@@ -38,6 +40,7 @@ async function verifyLicense(
 
   if (license.expires_at !== null && now > license.expires_at) {
     await expireLicense(key);
+    await logKeyExpired(key);
     return { ok: false, status: 401, message: "Key sudah kadaluarsa.", code: "EXPIRED" };
   }
 
@@ -53,6 +56,7 @@ async function verifyLicense(
     const expiresAt = durationMs !== null ? now + durationMs : null;
 
     await activateLicense(hwid, expiresAt, key);
+    await logKeyActivated(key, hwid);
 
     return {
       ok: true,
@@ -64,6 +68,7 @@ async function verifyLicense(
 
   if (license.status === "ACTIVE") {
     if (license.hwid_hash !== hwid) {
+      await logHwidMismatch(key);
       return {
         ok: false,
         status: 403,

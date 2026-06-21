@@ -17,6 +17,7 @@ import {
   removeAllUserKeysAndLicenses,
 } from "../database.js";
 import { generateLicenseKey, durationLabel } from "../utils.js";
+import { logWhitelistAdd, logWhitelistRemove } from "../../lib/discordLogger.js";
 import { logger } from "../../lib/logger.js";
 
 export const data = new SlashCommandBuilder()
@@ -98,7 +99,6 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
     const now = Date.now();
     const generatedKeys: string[] = [];
-
     const licenseEntries: Array<{
       id: string;
       licenseKey: string;
@@ -149,6 +149,8 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       addedAt: now,
     });
 
+    await logWhitelistAdd(target.id, keyCount, interaction.user.id);
+
     const keyBlock = generatedKeys.map((k) => `\`${k}\``).join("\n");
     const typeLabel = durationLabel(keyType, duration);
 
@@ -191,6 +193,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
     const deletedKeys = await removeAllUserKeysAndLicenses(target.id);
     await removeFromWhitelist(target.id);
+    await logWhitelistRemove(target.id, deletedKeys.length, interaction.user.id);
 
     let roleStatus = "Tidak diproses";
     const guild = interaction.guild;
