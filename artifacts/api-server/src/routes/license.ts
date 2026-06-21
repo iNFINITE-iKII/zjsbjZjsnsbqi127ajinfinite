@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
-import { getByKey, activateLicense, expireLicense } from "../bot/database.js";
+import { getByKey, activateLicense, setLicenseActive, expireLicense, getHwidsForKey, addHwidToKey } from "../bot/database.js";
 import { getDurationMs } from "../bot/utils.js";
 import {
   logKeyActivated,
@@ -55,7 +55,12 @@ async function verifyLicense(
         : getDurationMs(license.duration_type, license.duration_value);
     const expiresAt = durationMs !== null ? now + durationMs : null;
 
-    await activateLicense(hwid, expiresAt, key);
+    if (license.max_hwid_count > 1) {
+      await setLicenseActive(key, expiresAt);
+      await addHwidToKey(key, hwid);
+    } else {
+      await activateLicense(hwid, expiresAt, key);
+    }
     await logKeyActivated(key, hwid);
 
     return {
@@ -67,6 +72,47 @@ async function verifyLicense(
   }
 
   if (license.status === "ACTIVE") {
+    if (license.max_hwid_count > 1) {
+      const hwids = await getHwidsForKey(key);
+      if (hwids.some((h) => h.hwid_hash === hwid)) {
+        return {
+          ok: true,
+          code: "AUTHORIZED",
+          expires_at: license.expires_at,
+          duration_type: license.duration_type,
+        };
+      }
+      if (hwids.length < license.max_hwid_count) {
+        await addHwidToKey(key, hwid);
+        await logKeyActivated(key, hwid);
+        return {
+          ok: true,
+          code: "ACTIVATED",
+          expires_at: license.expires_at,
+          duration_type: license.duration_type,
+        };
+      }
+      await logHwidMismatch(key);
+      return {
+        ok: false,
+        status: 403,
+        message: `Batas perangkat tercapai. Key ini hanya boleh dipakai di ${license.max_hwid_count} perangkat.`,
+        code: "HWID_MISMATCH",
+      };
+    }
+
+    // Single device mode — fix: allow rebind if HWID was reset (hwid_hash is NULL)
+    if (license.hwid_hash === null) {
+      await activateLicense(hwid, license.expires_at, key);
+      await logKeyActivated(key, hwid);
+      return {
+        ok: true,
+        code: "ACTIVATED",
+        expires_at: license.expires_at,
+        duration_type: license.duration_type,
+      };
+    }
+
     if (license.hwid_hash !== hwid) {
       await logHwidMismatch(key);
       return {

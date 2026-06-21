@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { randomUUID } from "crypto";
 
 const connectionString = process.env["DATABASE_URL"];
 if (!connectionString) {
@@ -34,6 +35,14 @@ export interface License {
   hwid_reset_period: "DAILY" | "WEEKLY" | "MONTHLY" | "UNLIMITED";
   label: string | null;
   notified_expire: boolean;
+  max_hwid_count: number;
+}
+
+export interface LicenseHwid {
+  id: string;
+  license_key: string;
+  hwid_hash: string;
+  bound_at: number;
 }
 
 export interface WhitelistEntry {
@@ -97,7 +106,8 @@ export async function initDb(): Promise<void> {
       hwid_reset_count INT DEFAULT 0,
       hwid_reset_period TEXT DEFAULT 'WEEKLY',
       label TEXT DEFAULT NULL,
-      notified_expire BOOLEAN DEFAULT FALSE
+      notified_expire BOOLEAN DEFAULT FALSE,
+      max_hwid_count INT DEFAULT 1
     )
   `;
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_resets INT DEFAULT 1`;
@@ -105,7 +115,19 @@ export async function initDb(): Promise<void> {
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_period TEXT DEFAULT 'WEEKLY'`;
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS label TEXT DEFAULT NULL`;
   await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS notified_expire BOOLEAN DEFAULT FALSE`;
+  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_count INT DEFAULT 1`;
   await sql`CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS license_hwids (
+      id TEXT PRIMARY KEY,
+      license_key TEXT NOT NULL,
+      hwid_hash TEXT NOT NULL,
+      bound_at BIGINT NOT NULL,
+      UNIQUE(license_key, hwid_hash)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_license_hwids_key ON license_hwids(license_key)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS whitelist (
@@ -190,11 +212,17 @@ export async function setHwid(hwidHash: string, licenseKey: string): Promise<voi
 }
 
 export async function resetHwid(licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET hwid_hash = NULL WHERE license_key = ${licenseKey}`;
+  await sql.begin(async (tx) => {
+    await tx`UPDATE licenses SET hwid_hash = NULL WHERE license_key = ${licenseKey}`;
+    await tx`DELETE FROM license_hwids WHERE license_key = ${licenseKey}`;
+  });
 }
 
 export async function resetHwidAndIncrementCount(licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET hwid_hash = NULL, hwid_reset_count = hwid_reset_count + 1 WHERE license_key = ${licenseKey}`;
+  await sql.begin(async (tx) => {
+    await tx`UPDATE licenses SET hwid_hash = NULL, hwid_reset_count = hwid_reset_count + 1 WHERE license_key = ${licenseKey}`;
+    await tx`DELETE FROM license_hwids WHERE license_key = ${licenseKey}`;
+  });
 }
 
 export async function revokeLicense(licenseKey: string): Promise<void> {
@@ -224,10 +252,33 @@ export async function renewLicense(licenseKey: string, durationType: string, dur
 
 export async function deleteLicense(licenseKey: string): Promise<void> {
   await sql.begin(async (tx) => {
+    await tx`DELETE FROM license_hwids WHERE license_key = ${licenseKey}`;
     await tx`DELETE FROM hwid_reset_log WHERE license_key = ${licenseKey}`;
     await tx`DELETE FROM user_keys WHERE license_key = ${licenseKey}`;
     await tx`DELETE FROM licenses WHERE license_key = ${licenseKey}`;
   });
+}
+
+// ─── Multi-HWID functions ──────────────────────────────────────────────────
+
+export async function getHwidsForKey(licenseKey: string): Promise<LicenseHwid[]> {
+  return sql<LicenseHwid[]>`SELECT * FROM license_hwids WHERE license_key = ${licenseKey} ORDER BY bound_at ASC`;
+}
+
+export async function addHwidToKey(licenseKey: string, hwidHash: string): Promise<void> {
+  await sql`
+    INSERT INTO license_hwids (id, license_key, hwid_hash, bound_at)
+    VALUES (${randomUUID()}, ${licenseKey}, ${hwidHash}, ${Date.now()})
+    ON CONFLICT (license_key, hwid_hash) DO NOTHING
+  `;
+}
+
+export async function setMaxHwidCount(licenseKey: string, maxCount: number): Promise<void> {
+  await sql`UPDATE licenses SET max_hwid_count = ${maxCount} WHERE license_key = ${licenseKey}`;
+}
+
+export async function setLicenseActive(licenseKey: string, expiresAt: number | null): Promise<void> {
+  await sql`UPDATE licenses SET status = 'ACTIVE', expires_at = ${expiresAt} WHERE license_key = ${licenseKey}`;
 }
 
 export async function getLicenseStats(): Promise<LicenseStats> {

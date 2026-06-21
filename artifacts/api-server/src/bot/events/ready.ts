@@ -26,11 +26,13 @@ import * as transferkey from "../commands/transferkey.js";
 import * as setlabel from "../commands/setlabel.js";
 import * as cleanup from "../commands/cleanup.js";
 import * as help from "../commands/help.js";
+import * as sethwidcount from "../commands/sethwidcount.js";
 
 const commands = [
   genkey, checkkey, sethwid, resethwid, revoke,
   whitelist, setmaxhwid, userkey, panel, deletekey,
   stats, renewkey, transferkey, setlabel, cleanup, help,
+  sethwidcount,
 ];
 
 function buildPanelEmbed(): EmbedBuilder {
