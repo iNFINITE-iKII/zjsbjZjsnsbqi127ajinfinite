@@ -8,6 +8,7 @@ local SERVER_URL  = "https://xifil-hub-production.up.railway.app"
 local KEY_FILE    = "XiFilPro_Configs/license.key"
 local FOLDER_NAME = "XiFilPro_Configs"
 
+
 --------------------------------------------------------------------------------
 --// HWID
 --------------------------------------------------------------------------------
@@ -1323,7 +1324,7 @@ local MainFarmPage=CreateTab("🏠 Farm",1)
 CreateSection(MainFarmPage,"Farm Engine Control")
 
 -- Toggle: Auto Farm Monster (Prioritas 3: serang enemy yang ada)
-_G.FarmMonsterToggle=CreateToggleUI(MainFarmPage,"🗡️ Auto Farm Monster (serang enemy)",EngineConfig.AutoFarmMonster,function(v)
+_G.FarmMonsterToggle=CreateToggleUI(MainFarmPage,"🗡️ Auto Farm Monster ",EngineConfig.AutoFarmMonster,function(v)
     EngineConfig.AutoFarmMonster=v
     if v then
         if checkVictoryUi() then task.spawn(function() DisableAutoFarm("Victory aktif.") end)
@@ -1362,8 +1363,8 @@ _G.AutoEggToggle=CreateToggleUI(MainFarmPage,"🥚 Auto Egg ",EngineConfig.AutoE
         task.spawn(startFarmLoop)
     end
 end)
-
-_G.ReplayToggle=CreateToggleUI(MainFarmPage,"🔄 Auto Play Again",EngineConfig.AutoReplayActive,function(v) EngineConfig.AutoReplayActive=v end)
+   
+_G.ReplayToggle=CreateToggleUI(MainFarmPage,"🔄 Auto Play Against",EngineConfig.AutoReplayActive,function(v) EngineConfig.AutoReplayActive=v end )
 
 CreateSection(MainFarmPage,"Target Selector")
 
@@ -1914,27 +1915,27 @@ end
 
 CreateSection(ForgePage,"NPC Utility Access")
 
-CreateButton(ForgePage,"🔮  Buka Enchantment ",function()
+CreateButton(ForgePage,"🔮  Open Enchant&Fuse Rune ",function()
     TPAndOpenByKeyword({"enchant"},"ENCHANTMENT")
 end)
 
-CreateButton(ForgePage,"🛒  Buka Grocery",function()
+CreateButton(ForgePage,"🛒  Open Grocery",function()
     TPAndOpenByKeyword({"grocery","grocer"},"GROCERY")
 end)
 
-CreateButton(ForgePage,"🐾  Buka Pet Upgrade",function()
+CreateButton(ForgePage,"🐾  Open Pet Upgrade",function()
     TPAndOpenByKeyword({"pet","upgrade","petupgrade"},"PET UPGRADE")
 end)
 
-CreateButton(ForgePage,"🏕️  Buka Pet Expedition",function()
+CreateButton(ForgePage,"🏕️  Open Pet Expedition",function()
     TPAndOpenByKeyword({"expedition","petexp"},"PET EXPEDITION")
 end)
 
-CreateButton(ForgePage,"✨  Buka Runes Equipment",function()
+CreateButton(ForgePage,"✨  Open Upgrade Equipment",function()
     TPAndOpenByKeyword({"bless","blessing"},"BLESS EQUIPMENT")
 end)
 
-CreateButton(ForgePage,"✨  Buka The Guide ",function()
+CreateButton(ForgePage,"✨  Open The Guide ",function()
     TPAndOpenByKeyword({"guide","the"},"THE GUIDE")
 end)
 
