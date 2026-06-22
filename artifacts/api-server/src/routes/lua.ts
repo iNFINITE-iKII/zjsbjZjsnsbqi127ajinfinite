@@ -14,6 +14,14 @@ const LUA_DIR = path.resolve(
 const VALID_GAME_NAME = /^[a-z0-9_-]{1,64}$/i;
 
 router.get("/loader", async (req, res) => {
+  const ua = (req.headers["user-agent"] ?? "").toLowerCase();
+  const isRoblox = ua.includes("roblox");
+
+  if (!isRoblox) {
+    res.status(403).send("Forbidden");
+    return;
+  }
+
   const game = (req.query["game"] as string | undefined)?.trim();
 
   if (!game) {
