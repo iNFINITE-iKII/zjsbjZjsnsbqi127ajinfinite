@@ -1,85 +1,24 @@
-import postgres from "postgres";
 import { randomUUID } from "crypto";
+import { db } from "@workspace/db";
+import {
+  licensesTable,
+  licenseHwidsTable,
+  botWhitelistTable,
+  userKeysTable,
+  hwidResetLogTable,
+  pendingTicketsTable,
+  trialKeyClaimsTable,
+} from "@workspace/db";
+import { eq, and, inArray, sql, desc, gt, lt, isNotNull } from "drizzle-orm";
 
-const connectionString = process.env["DATABASE_URL"];
-if (!connectionString) {
-  throw new Error("DATABASE_URL environment variable is required but was not provided.");
-}
-
-// Enable SSL for Neon (neon.tech) and in production; skip for local Postgres
-const needsSsl = connectionString.includes("neon.tech") || process.env["NODE_ENV"] === "production";
-// Neon pooler (PgBouncer) does not support prepared statements
-const isPooler = connectionString.includes("-pooler");
-export const sql = postgres(connectionString, {
-  ssl: needsSsl ? "require" : false,
-  prepare: !isPooler,
-  max: 10,
-  idle_timeout: 30,
-  types: {
-    bigint: {
-      to: 20,
-      from: [20],
-      serialize: (x: number) => String(x),
-      parse: (x: string) => Number(x),
-    },
-  },
-});
-
-export interface License {
-  id: string;
-  license_key: string;
-  duration_type: "PERMANENT" | "HOURLY" | "DAILY" | "WEEKLY";
-  duration_value: number;
-  status: "UNUSED" | "ACTIVE" | "EXPIRED" | "REVOKED";
-  hwid_hash: string | null;
-  expires_at: number | null;
-  issuer_discord_id: string;
-  created_at: number;
-  max_hwid_resets: number;
-  hwid_reset_count: number;
-  hwid_reset_period: "DAILY" | "WEEKLY" | "MONTHLY" | "UNLIMITED";
-  label: string | null;
-  notified_expire: boolean;
-  max_hwid_count: number;
-}
-
-export interface LicenseHwid {
-  id: string;
-  license_key: string;
-  hwid_hash: string;
-  bound_at: number;
-}
-
-export interface WhitelistEntry {
-  id: string;
-  discord_user_id: string;
-  discord_username: string;
-  key_count: number;
-  vip_role_assigned: boolean;
-  added_by: string;
-  added_at: number;
-}
-
-export interface UserKey {
-  id: string;
-  discord_user_id: string;
-  license_key: string;
-  assigned_at: number;
-}
-
-export interface HwidResetLog {
-  id: string;
-  discord_user_id: string;
-  license_key: string;
-  reset_at: number;
-}
-
-export interface PendingTicket {
-  discord_user_id: string;
-  channel_id: string;
-  message_id: string;
-  created_at: number;
-}
+// ─── Re-exported types (same shape as before — command files unchanged) ────
+export type { License } from "@workspace/db";
+export type { LicenseHwid } from "@workspace/db";
+export type { WhitelistEntry } from "@workspace/db";
+export type { UserKey } from "@workspace/db";
+export type { HwidResetLog } from "@workspace/db";
+export type { PendingTicket } from "@workspace/db";
+export type { TrialKeyClaim } from "@workspace/db";
 
 export interface LicenseStats {
   total: number;
@@ -95,8 +34,9 @@ export interface ExpiringKeyRow {
   discord_user_id: string;
 }
 
+// ─── Database initialisation (idempotent DDL) ─────────────────────────────
 export async function initDb(): Promise<void> {
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS licenses (
       id TEXT PRIMARY KEY,
       license_key TEXT UNIQUE NOT NULL,
@@ -114,16 +54,16 @@ export async function initDb(): Promise<void> {
       notified_expire BOOLEAN DEFAULT FALSE,
       max_hwid_count INT DEFAULT 3
     )
-  `;
-  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_resets INT DEFAULT 1`;
-  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_count INT DEFAULT 0`;
-  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_period TEXT DEFAULT 'WEEKLY'`;
-  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS label TEXT DEFAULT NULL`;
-  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS notified_expire BOOLEAN DEFAULT FALSE`;
-  await sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_count INT DEFAULT 3`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)`;
+  `);
+  await db.execute(sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_resets INT DEFAULT 1`);
+  await db.execute(sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_count INT DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_period TEXT DEFAULT 'WEEKLY'`);
+  await db.execute(sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS label TEXT DEFAULT NULL`);
+  await db.execute(sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS notified_expire BOOLEAN DEFAULT FALSE`);
+  await db.execute(sql`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS max_hwid_count INT DEFAULT 3`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_license_key ON licenses(license_key)`);
 
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS license_hwids (
       id TEXT PRIMARY KEY,
       license_key TEXT NOT NULL,
@@ -131,10 +71,10 @@ export async function initDb(): Promise<void> {
       bound_at BIGINT NOT NULL,
       UNIQUE(license_key, hwid_hash)
     )
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_license_hwids_key ON license_hwids(license_key)`;
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_license_hwids_key ON license_hwids(license_key)`);
 
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS whitelist (
       id TEXT PRIMARY KEY,
       discord_user_id TEXT UNIQUE NOT NULL,
@@ -144,9 +84,9 @@ export async function initDb(): Promise<void> {
       added_by TEXT NOT NULL,
       added_at BIGINT NOT NULL
     )
-  `;
+  `);
 
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS user_keys (
       id TEXT PRIMARY KEY,
       discord_user_id TEXT NOT NULL,
@@ -154,41 +94,45 @@ export async function initDb(): Promise<void> {
       assigned_at BIGINT NOT NULL,
       UNIQUE(discord_user_id, license_key)
     )
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_user_keys_user ON user_keys(discord_user_id)`;
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_user_keys_user ON user_keys(discord_user_id)`);
 
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS hwid_reset_log (
       id TEXT PRIMARY KEY,
       discord_user_id TEXT NOT NULL,
       license_key TEXT NOT NULL,
       reset_at BIGINT NOT NULL
     )
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_hwid_reset_user ON hwid_reset_log(discord_user_id, license_key)`;
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hwid_reset_user ON hwid_reset_log(discord_user_id, license_key)`);
 
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS pending_tickets (
       discord_user_id TEXT PRIMARY KEY,
       channel_id TEXT NOT NULL,
       message_id TEXT NOT NULL,
       created_at BIGINT NOT NULL
     )
-  `;
+  `);
 
-  await sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS trial_key_claims (
       discord_user_id TEXT PRIMARY KEY,
       license_key TEXT NOT NULL,
       claimed_at BIGINT NOT NULL
     )
-  `;
+  `);
 }
 
 // ─── License functions ─────────────────────────────────────────────────────
 
-export async function getByKey(licenseKey: string): Promise<License | null> {
-  const rows = await sql<License[]>`SELECT * FROM licenses WHERE license_key = ${licenseKey}`;
+export async function getByKey(licenseKey: string) {
+  const rows = await db
+    .select()
+    .from(licensesTable)
+    .where(eq(licensesTable.license_key, licenseKey))
+    .limit(1);
   return rows[0] ?? null;
 }
 
@@ -205,295 +149,481 @@ export async function insertLicenses(
     maxHwidCount?: number;
   }>
 ): Promise<void> {
-  await sql.begin(async (tx) => {
+  await db.transaction(async (tx) => {
     for (const e of entries) {
       const maxResets = e.maxHwidResets ?? 1;
       const period = e.hwidResetPeriod ?? "WEEKLY";
-      // PERMANENT keys default to 3 accounts; others default to 1
       const maxHwidCount = e.maxHwidCount ?? (e.durationType === "PERMANENT" ? 3 : 1);
-      await tx`
-        INSERT INTO licenses (id, license_key, duration_type, duration_value, issuer_discord_id, created_at, max_hwid_resets, hwid_reset_period, max_hwid_count)
-        VALUES (${e.id}, ${e.licenseKey}, ${e.durationType}, ${e.durationValue}, ${e.issuerDiscordId}, ${e.createdAt}, ${maxResets}, ${period}, ${maxHwidCount})
-      `;
+      await tx.insert(licensesTable).values({
+        id: e.id,
+        license_key: e.licenseKey,
+        duration_type: e.durationType,
+        duration_value: e.durationValue,
+        issuer_discord_id: e.issuerDiscordId,
+        created_at: e.createdAt,
+        max_hwid_resets: maxResets,
+        hwid_reset_period: period,
+        max_hwid_count: maxHwidCount,
+      });
     }
   });
 }
 
-export async function activateLicense(hwidHash: string, expiresAt: number | null, licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET status = 'ACTIVE', hwid_hash = ${hwidHash}, expires_at = ${expiresAt} WHERE license_key = ${licenseKey}`;
+export async function activateLicense(
+  hwidHash: string,
+  expiresAt: number | null,
+  licenseKey: string
+): Promise<void> {
+  await db
+    .update(licensesTable)
+    .set({ status: "ACTIVE", hwid_hash: hwidHash, expires_at: expiresAt })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function setHwid(hwidHash: string, licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET hwid_hash = ${hwidHash} WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ hwid_hash: hwidHash })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function resetHwid(licenseKey: string): Promise<void> {
-  await sql.begin(async (tx) => {
-    await tx`UPDATE licenses SET hwid_hash = NULL WHERE license_key = ${licenseKey}`;
-    await tx`DELETE FROM license_hwids WHERE license_key = ${licenseKey}`;
+  await db.transaction(async (tx) => {
+    await tx
+      .update(licensesTable)
+      .set({ hwid_hash: null })
+      .where(eq(licensesTable.license_key, licenseKey));
+    await tx
+      .delete(licenseHwidsTable)
+      .where(eq(licenseHwidsTable.license_key, licenseKey));
   });
 }
 
 export async function resetHwidAndIncrementCount(licenseKey: string): Promise<void> {
-  await sql.begin(async (tx) => {
-    await tx`UPDATE licenses SET hwid_hash = NULL, hwid_reset_count = hwid_reset_count + 1 WHERE license_key = ${licenseKey}`;
-    await tx`DELETE FROM license_hwids WHERE license_key = ${licenseKey}`;
+  await db.transaction(async (tx) => {
+    await tx
+      .update(licensesTable)
+      .set({
+        hwid_hash: null,
+        hwid_reset_count: sql`${licensesTable.hwid_reset_count} + 1`,
+      })
+      .where(eq(licensesTable.license_key, licenseKey));
+    await tx
+      .delete(licenseHwidsTable)
+      .where(eq(licenseHwidsTable.license_key, licenseKey));
   });
 }
 
 export async function revokeLicense(licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET status = 'REVOKED' WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ status: "REVOKED" })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function expireLicense(licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET status = 'EXPIRED' WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ status: "EXPIRED" })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
-export async function setMaxHwidResets(licenseKey: string, maxResets: number, period: string): Promise<void> {
-  await sql`UPDATE licenses SET max_hwid_resets = ${maxResets}, hwid_reset_period = ${period} WHERE license_key = ${licenseKey}`;
+export async function setMaxHwidResets(
+  licenseKey: string,
+  maxResets: number,
+  period: string
+): Promise<void> {
+  await db
+    .update(licensesTable)
+    .set({ max_hwid_resets: maxResets, hwid_reset_period: period })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function setKeyLabel(licenseKey: string, label: string | null): Promise<void> {
-  await sql`UPDATE licenses SET label = ${label} WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ label })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
-export async function renewLicense(licenseKey: string, durationType: string, durationValue: number, expiresAt: number | null, status: string): Promise<void> {
-  await sql`
-    UPDATE licenses
-    SET duration_type = ${durationType}, duration_value = ${durationValue},
-        expires_at = ${expiresAt}, status = ${status}, notified_expire = FALSE
-    WHERE license_key = ${licenseKey}
-  `;
+export async function renewLicense(
+  licenseKey: string,
+  durationType: string,
+  durationValue: number,
+  expiresAt: number | null,
+  status: string
+): Promise<void> {
+  await db
+    .update(licensesTable)
+    .set({
+      duration_type: durationType,
+      duration_value: durationValue,
+      expires_at: expiresAt,
+      status,
+      notified_expire: false,
+    })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function deleteLicense(licenseKey: string): Promise<void> {
-  await sql.begin(async (tx) => {
-    await tx`DELETE FROM license_hwids WHERE license_key = ${licenseKey}`;
-    await tx`DELETE FROM hwid_reset_log WHERE license_key = ${licenseKey}`;
-    await tx`DELETE FROM user_keys WHERE license_key = ${licenseKey}`;
-    await tx`DELETE FROM licenses WHERE license_key = ${licenseKey}`;
+  await db.transaction(async (tx) => {
+    await tx.delete(licenseHwidsTable).where(eq(licenseHwidsTable.license_key, licenseKey));
+    await tx.delete(hwidResetLogTable).where(eq(hwidResetLogTable.license_key, licenseKey));
+    await tx.delete(userKeysTable).where(eq(userKeysTable.license_key, licenseKey));
+    await tx.delete(licensesTable).where(eq(licensesTable.license_key, licenseKey));
   });
 }
 
 // ─── Multi-HWID functions ──────────────────────────────────────────────────
 
-export async function getHwidsForKey(licenseKey: string): Promise<LicenseHwid[]> {
-  return sql<LicenseHwid[]>`SELECT * FROM license_hwids WHERE license_key = ${licenseKey} ORDER BY bound_at ASC`;
+export async function getHwidsForKey(licenseKey: string) {
+  return db
+    .select()
+    .from(licenseHwidsTable)
+    .where(eq(licenseHwidsTable.license_key, licenseKey))
+    .orderBy(licenseHwidsTable.bound_at);
 }
 
 export async function addHwidToKey(licenseKey: string, hwidHash: string): Promise<void> {
-  await sql`
-    INSERT INTO license_hwids (id, license_key, hwid_hash, bound_at)
-    VALUES (${randomUUID()}, ${licenseKey}, ${hwidHash}, ${Date.now()})
-    ON CONFLICT (license_key, hwid_hash) DO NOTHING
-  `;
+  await db
+    .insert(licenseHwidsTable)
+    .values({
+      id: randomUUID(),
+      license_key: licenseKey,
+      hwid_hash: hwidHash,
+      bound_at: Date.now(),
+    })
+    .onConflictDoNothing();
 }
 
 export async function setMaxHwidCount(licenseKey: string, maxCount: number): Promise<void> {
-  await sql`UPDATE licenses SET max_hwid_count = ${maxCount} WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ max_hwid_count: maxCount })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function setLicenseActive(licenseKey: string, expiresAt: number | null): Promise<void> {
-  await sql`UPDATE licenses SET status = 'ACTIVE', expires_at = ${expiresAt} WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ status: "ACTIVE", expires_at: expiresAt })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function getLicenseStats(): Promise<LicenseStats> {
-  const rows = await sql<Array<{ total: string; active: string; unused: string; expired: string; revoked: string }>>`
-    SELECT
-      COUNT(*)::text AS total,
-      COUNT(*) FILTER (WHERE status = 'ACTIVE')::text AS active,
-      COUNT(*) FILTER (WHERE status = 'UNUSED')::text AS unused,
-      COUNT(*) FILTER (WHERE status = 'EXPIRED')::text AS expired,
-      COUNT(*) FILTER (WHERE status = 'REVOKED')::text AS revoked
-    FROM licenses
-  `;
-  const r = rows[0]!;
-  return { total: Number(r.total), active: Number(r.active), unused: Number(r.unused), expired: Number(r.expired), revoked: Number(r.revoked) };
+  const result = await db
+    .select({
+      total: sql<number>`COUNT(*)::int`,
+      active: sql<number>`COUNT(*) FILTER (WHERE ${licensesTable.status} = 'ACTIVE')::int`,
+      unused: sql<number>`COUNT(*) FILTER (WHERE ${licensesTable.status} = 'UNUSED')::int`,
+      expired: sql<number>`COUNT(*) FILTER (WHERE ${licensesTable.status} = 'EXPIRED')::int`,
+      revoked: sql<number>`COUNT(*) FILTER (WHERE ${licensesTable.status} = 'REVOKED')::int`,
+    })
+    .from(licensesTable);
+  const r = result[0]!;
+  return {
+    total: r.total,
+    active: r.active,
+    unused: r.unused,
+    expired: r.expired,
+    revoked: r.revoked,
+  };
 }
 
 export async function getExpiringKeys(now: number, cutoff: number): Promise<ExpiringKeyRow[]> {
-  return sql<ExpiringKeyRow[]>`
-    SELECT l.license_key, l.expires_at, uk.discord_user_id
-    FROM licenses l
-    JOIN user_keys uk ON uk.license_key = l.license_key
-    WHERE l.status = 'ACTIVE' AND l.expires_at IS NOT NULL
-      AND l.expires_at > ${now} AND l.expires_at < ${cutoff} AND l.notified_expire = FALSE
-  `;
+  const rows = await db
+    .select({
+      license_key: licensesTable.license_key,
+      expires_at: licensesTable.expires_at,
+      discord_user_id: userKeysTable.discord_user_id,
+    })
+    .from(licensesTable)
+    .innerJoin(userKeysTable, eq(userKeysTable.license_key, licensesTable.license_key))
+    .where(
+      and(
+        eq(licensesTable.status, "ACTIVE"),
+        isNotNull(licensesTable.expires_at),
+        gt(licensesTable.expires_at, now),
+        lt(licensesTable.expires_at, cutoff),
+        eq(licensesTable.notified_expire, false)
+      )
+    );
+  return rows as ExpiringKeyRow[];
 }
 
 export async function markNotifiedExpire(licenseKey: string): Promise<void> {
-  await sql`UPDATE licenses SET notified_expire = TRUE WHERE license_key = ${licenseKey}`;
+  await db
+    .update(licensesTable)
+    .set({ notified_expire: true })
+    .where(eq(licensesTable.license_key, licenseKey));
 }
 
 export async function cleanupOldKeys(cutoffCreatedAt: number): Promise<number> {
-  const keys = await sql<{ license_key: string }[]>`
-    SELECT license_key FROM licenses WHERE status IN ('EXPIRED', 'REVOKED') AND created_at < ${cutoffCreatedAt}
-  `;
+  const keys = await db
+    .select({ license_key: licensesTable.license_key })
+    .from(licensesTable)
+    .where(
+      and(
+        inArray(licensesTable.status, ["EXPIRED", "REVOKED"]),
+        lt(licensesTable.created_at, cutoffCreatedAt)
+      )
+    );
   if (keys.length === 0) return 0;
-  await sql.begin(async (tx) => {
-    for (const { license_key } of keys) {
-      await tx`DELETE FROM hwid_reset_log WHERE license_key = ${license_key}`;
-      await tx`DELETE FROM user_keys WHERE license_key = ${license_key}`;
-      await tx`DELETE FROM licenses WHERE license_key = ${license_key}`;
-    }
+  const keyList = keys.map((k) => k.license_key);
+  await db.transaction(async (tx) => {
+    await tx.delete(hwidResetLogTable).where(inArray(hwidResetLogTable.license_key, keyList));
+    await tx.delete(userKeysTable).where(inArray(userKeysTable.license_key, keyList));
+    await tx.delete(licensesTable).where(inArray(licensesTable.license_key, keyList));
   });
   return keys.length;
 }
 
 // ─── Whitelist functions ───────────────────────────────────────────────────
 
-export async function getWhitelistUser(discordUserId: string): Promise<WhitelistEntry | null> {
-  const rows = await sql<WhitelistEntry[]>`SELECT * FROM whitelist WHERE discord_user_id = ${discordUserId}`;
+export async function getWhitelistUser(discordUserId: string) {
+  const rows = await db
+    .select()
+    .from(botWhitelistTable)
+    .where(eq(botWhitelistTable.discord_user_id, discordUserId))
+    .limit(1);
   return rows[0] ?? null;
 }
 
-export async function addToWhitelist(entry: { id: string; discordUserId: string; discordUsername: string; keyCount: number; addedBy: string; addedAt: number }): Promise<void> {
-  await sql`
-    INSERT INTO whitelist (id, discord_user_id, discord_username, key_count, added_by, added_at)
-    VALUES (${entry.id}, ${entry.discordUserId}, ${entry.discordUsername}, ${entry.keyCount}, ${entry.addedBy}, ${entry.addedAt})
-    ON CONFLICT (discord_user_id) DO UPDATE SET
-      discord_username = ${entry.discordUsername},
-      key_count = whitelist.key_count + ${entry.keyCount},
-      added_by = ${entry.addedBy},
-      added_at = ${entry.addedAt}
-  `;
+export async function addToWhitelist(entry: {
+  id: string;
+  discordUserId: string;
+  discordUsername: string;
+  keyCount: number;
+  addedBy: string;
+  addedAt: number;
+}): Promise<void> {
+  await db
+    .insert(botWhitelistTable)
+    .values({
+      id: entry.id,
+      discord_user_id: entry.discordUserId,
+      discord_username: entry.discordUsername,
+      key_count: entry.keyCount,
+      added_by: entry.addedBy,
+      added_at: entry.addedAt,
+    })
+    .onConflictDoUpdate({
+      target: botWhitelistTable.discord_user_id,
+      set: {
+        discord_username: entry.discordUsername,
+        key_count: sql`${botWhitelistTable.key_count} + ${entry.keyCount}`,
+        added_by: entry.addedBy,
+        added_at: entry.addedAt,
+      },
+    });
 }
 
 export async function removeFromWhitelist(discordUserId: string): Promise<boolean> {
-  const result = await sql`DELETE FROM whitelist WHERE discord_user_id = ${discordUserId}`;
-  return (result.count ?? 0) > 0;
+  const result = await db
+    .delete(botWhitelistTable)
+    .where(eq(botWhitelistTable.discord_user_id, discordUserId));
+  return (result.rowCount ?? 0) > 0;
 }
 
-export async function getAllWhitelist(): Promise<WhitelistEntry[]> {
-  return sql<WhitelistEntry[]>`SELECT * FROM whitelist ORDER BY added_at DESC`;
+export async function getAllWhitelist() {
+  return db
+    .select()
+    .from(botWhitelistTable)
+    .orderBy(desc(botWhitelistTable.added_at));
 }
 
 export async function setVipRoleAssigned(discordUserId: string): Promise<void> {
-  await sql`UPDATE whitelist SET vip_role_assigned = TRUE WHERE discord_user_id = ${discordUserId}`;
+  await db
+    .update(botWhitelistTable)
+    .set({ vip_role_assigned: true })
+    .where(eq(botWhitelistTable.discord_user_id, discordUserId));
 }
 
 export async function removeAllUserKeysAndLicenses(discordUserId: string): Promise<string[]> {
-  const userKeys = await sql<UserKey[]>`SELECT * FROM user_keys WHERE discord_user_id = ${discordUserId}`;
-  const licenseKeys = userKeys.map((uk) => uk.license_key);
-  await sql.begin(async (tx) => {
-    for (const key of licenseKeys) {
-      await tx`DELETE FROM hwid_reset_log WHERE license_key = ${key}`;
-      await tx`DELETE FROM licenses WHERE license_key = ${key}`;
-    }
-    await tx`DELETE FROM user_keys WHERE discord_user_id = ${discordUserId}`;
-  });
+  const userKeyRows = await db
+    .select({ license_key: userKeysTable.license_key })
+    .from(userKeysTable)
+    .where(eq(userKeysTable.discord_user_id, discordUserId));
+  const licenseKeys = userKeyRows.map((uk) => uk.license_key);
+  if (licenseKeys.length > 0) {
+    await db.transaction(async (tx) => {
+      await tx.delete(hwidResetLogTable).where(inArray(hwidResetLogTable.license_key, licenseKeys));
+      await tx.delete(licenseHwidsTable).where(inArray(licenseHwidsTable.license_key, licenseKeys));
+      await tx.delete(licensesTable).where(inArray(licensesTable.license_key, licenseKeys));
+    });
+  }
+  await db.delete(userKeysTable).where(eq(userKeysTable.discord_user_id, discordUserId));
   return licenseKeys;
 }
 
 // ─── User Keys functions ───────────────────────────────────────────────────
 
-export async function getUserKeys(discordUserId: string): Promise<UserKey[]> {
-  return sql<UserKey[]>`SELECT * FROM user_keys WHERE discord_user_id = ${discordUserId} ORDER BY assigned_at ASC`;
+export async function getUserKeys(discordUserId: string) {
+  return db
+    .select()
+    .from(userKeysTable)
+    .where(eq(userKeysTable.discord_user_id, discordUserId))
+    .orderBy(userKeysTable.assigned_at);
 }
 
-export async function assignKeyToUser(entry: { id: string; discordUserId: string; licenseKey: string; assignedAt: number }): Promise<void> {
-  await sql`
-    INSERT INTO user_keys (id, discord_user_id, license_key, assigned_at)
-    VALUES (${entry.id}, ${entry.discordUserId}, ${entry.licenseKey}, ${entry.assignedAt})
-    ON CONFLICT (discord_user_id, license_key) DO NOTHING
-  `;
+export async function assignKeyToUser(entry: {
+  id: string;
+  discordUserId: string;
+  licenseKey: string;
+  assignedAt: number;
+}): Promise<void> {
+  await db
+    .insert(userKeysTable)
+    .values({
+      id: entry.id,
+      discord_user_id: entry.discordUserId,
+      license_key: entry.licenseKey,
+      assigned_at: entry.assignedAt,
+    })
+    .onConflictDoNothing();
 }
 
-export async function getKeyOwner(licenseKey: string): Promise<UserKey | null> {
-  const rows = await sql<UserKey[]>`SELECT * FROM user_keys WHERE license_key = ${licenseKey}`;
+export async function getKeyOwner(licenseKey: string) {
+  const rows = await db
+    .select()
+    .from(userKeysTable)
+    .where(eq(userKeysTable.license_key, licenseKey))
+    .limit(1);
   return rows[0] ?? null;
 }
 
 export async function transferKey(licenseKey: string, newUserId: string): Promise<void> {
-  await sql`UPDATE user_keys SET discord_user_id = ${newUserId} WHERE license_key = ${licenseKey}`;
+  await db
+    .update(userKeysTable)
+    .set({ discord_user_id: newUserId })
+    .where(eq(userKeysTable.license_key, licenseKey));
 }
 
 // ─── HWID Reset Log functions ──────────────────────────────────────────────
 
-export async function getLastHwidReset(discordUserId: string, licenseKey: string): Promise<HwidResetLog | null> {
-  const rows = await sql<HwidResetLog[]>`
-    SELECT * FROM hwid_reset_log
-    WHERE discord_user_id = ${discordUserId} AND license_key = ${licenseKey}
-    ORDER BY reset_at DESC LIMIT 1
-  `;
+export async function getLastHwidReset(discordUserId: string, licenseKey: string) {
+  const rows = await db
+    .select()
+    .from(hwidResetLogTable)
+    .where(
+      and(
+        eq(hwidResetLogTable.discord_user_id, discordUserId),
+        eq(hwidResetLogTable.license_key, licenseKey)
+      )
+    )
+    .orderBy(desc(hwidResetLogTable.reset_at))
+    .limit(1);
   return rows[0] ?? null;
 }
 
-export async function logHwidReset(entry: { id: string; discordUserId: string; licenseKey: string; resetAt: number }): Promise<void> {
-  await sql`
-    INSERT INTO hwid_reset_log (id, discord_user_id, license_key, reset_at)
-    VALUES (${entry.id}, ${entry.discordUserId}, ${entry.licenseKey}, ${entry.resetAt})
-  `;
+export async function logHwidReset(entry: {
+  id: string;
+  discordUserId: string;
+  licenseKey: string;
+  resetAt: number;
+}): Promise<void> {
+  await db.insert(hwidResetLogTable).values({
+    id: entry.id,
+    discord_user_id: entry.discordUserId,
+    license_key: entry.licenseKey,
+    reset_at: entry.resetAt,
+  });
 }
 
 // ─── Pending Tickets ───────────────────────────────────────────────────────
 
-export async function getPendingTicket(discordUserId: string): Promise<PendingTicket | null> {
-  const rows = await sql<PendingTicket[]>`SELECT * FROM pending_tickets WHERE discord_user_id = ${discordUserId}`;
+export async function getPendingTicket(discordUserId: string) {
+  const rows = await db
+    .select()
+    .from(pendingTicketsTable)
+    .where(eq(pendingTicketsTable.discord_user_id, discordUserId))
+    .limit(1);
   return rows[0] ?? null;
 }
 
-export async function addPendingTicket(entry: { discordUserId: string; channelId: string; messageId: string; createdAt: number }): Promise<void> {
-  await sql`
-    INSERT INTO pending_tickets (discord_user_id, channel_id, message_id, created_at)
-    VALUES (${entry.discordUserId}, ${entry.channelId}, ${entry.messageId}, ${entry.createdAt})
-    ON CONFLICT (discord_user_id) DO UPDATE SET channel_id = ${entry.channelId}, message_id = ${entry.messageId}, created_at = ${entry.createdAt}
-  `;
+export async function addPendingTicket(entry: {
+  discordUserId: string;
+  channelId: string;
+  messageId: string;
+  createdAt: number;
+}): Promise<void> {
+  await db
+    .insert(pendingTicketsTable)
+    .values({
+      discord_user_id: entry.discordUserId,
+      channel_id: entry.channelId,
+      message_id: entry.messageId,
+      created_at: entry.createdAt,
+    })
+    .onConflictDoUpdate({
+      target: pendingTicketsTable.discord_user_id,
+      set: {
+        channel_id: entry.channelId,
+        message_id: entry.messageId,
+        created_at: entry.createdAt,
+      },
+    });
 }
 
 export async function removePendingTicket(discordUserId: string): Promise<void> {
-  await sql`DELETE FROM pending_tickets WHERE discord_user_id = ${discordUserId}`;
+  await db
+    .delete(pendingTicketsTable)
+    .where(eq(pendingTicketsTable.discord_user_id, discordUserId));
 }
 
 // ─── Trial Key functions ───────────────────────────────────────────────────
 
-export interface TrialKeyClaim {
-  discord_user_id: string;
-  license_key: string;
-  claimed_at: number;
-}
-
-export async function getTrialKeyClaim(discordUserId: string): Promise<TrialKeyClaim | null> {
-  const rows = await sql<TrialKeyClaim[]>`SELECT * FROM trial_key_claims WHERE discord_user_id = ${discordUserId}`;
+export async function getTrialKeyClaim(discordUserId: string) {
+  const rows = await db
+    .select()
+    .from(trialKeyClaimsTable)
+    .where(eq(trialKeyClaimsTable.discord_user_id, discordUserId))
+    .limit(1);
   return rows[0] ?? null;
 }
 
-export async function saveTrialKeyClaim(discordUserId: string, licenseKey: string, claimedAt: number): Promise<void> {
-  await sql`
-    INSERT INTO trial_key_claims (discord_user_id, license_key, claimed_at)
-    VALUES (${discordUserId}, ${licenseKey}, ${claimedAt})
-    ON CONFLICT (discord_user_id) DO NOTHING
-  `;
+export async function saveTrialKeyClaim(
+  discordUserId: string,
+  licenseKey: string,
+  claimedAt: number
+): Promise<void> {
+  await db
+    .insert(trialKeyClaimsTable)
+    .values({
+      discord_user_id: discordUserId,
+      license_key: licenseKey,
+      claimed_at: claimedAt,
+    })
+    .onConflictDoNothing();
 }
 
 // ─── Premium key functions ─────────────────────────────────────────────────
 
-/**
- * Returns true if the user has at least one PERMANENT key that is ACTIVE or UNUSED.
- * REVOKED and EXPIRED PERMANENT keys do NOT qualify.
- */
 export async function userHasPremiumKey(discordUserId: string): Promise<boolean> {
-  const rows = await sql<{ count: string }[]>`
-    SELECT COUNT(*)::text AS count
-    FROM user_keys uk
-    JOIN licenses l ON l.license_key = uk.license_key
-    WHERE uk.discord_user_id = ${discordUserId}
-      AND l.duration_type = 'PERMANENT'
-      AND l.status IN ('ACTIVE', 'UNUSED')
-  `;
-  return Number(rows[0]?.count ?? 0) > 0;
+  const result = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(userKeysTable)
+    .innerJoin(licensesTable, eq(licensesTable.license_key, userKeysTable.license_key))
+    .where(
+      and(
+        eq(userKeysTable.discord_user_id, discordUserId),
+        eq(licensesTable.duration_type, "PERMANENT"),
+        inArray(licensesTable.status, ["ACTIVE", "UNUSED"])
+      )
+    );
+  return (result[0]?.count ?? 0) > 0;
 }
 
-/**
- * Returns all Discord user IDs that currently hold at least one valid PERMANENT key.
- */
 export async function getAllPremiumEligibleUserIds(): Promise<string[]> {
-  const rows = await sql<{ discord_user_id: string }[]>`
-    SELECT DISTINCT uk.discord_user_id
-    FROM user_keys uk
-    JOIN licenses l ON l.license_key = uk.license_key
-    WHERE l.duration_type = 'PERMANENT'
-      AND l.status IN ('ACTIVE', 'UNUSED')
-  `;
+  const rows = await db
+    .selectDistinct({ discord_user_id: userKeysTable.discord_user_id })
+    .from(userKeysTable)
+    .innerJoin(licensesTable, eq(licensesTable.license_key, userKeysTable.license_key))
+    .where(
+      and(
+        eq(licensesTable.duration_type, "PERMANENT"),
+        inArray(licensesTable.status, ["ACTIVE", "UNUSED"])
+      )
+    );
   return rows.map((r) => r.discord_user_id);
 }
