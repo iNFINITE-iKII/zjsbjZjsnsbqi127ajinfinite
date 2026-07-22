@@ -18,3 +18,14 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+DISCORD_CLIENT_ID = "1516196015479328858"
+DISCORD_GUILD_ID = "1343656009154957474"
+MAIN_SCRIPT_URL = "https://github.com/iNFINITE-iKII/XiFil-Hub/blob/main/artifacts/api-server/lua/games/soul_iron.lua"
+NODE_ENV = "production"
+TICKET_CHANNEL_ID = "1525340376263692298"
+TICKET_STAFF_ROLE_ID = "1517965757374267423"
+VIP_ROLE_NAME = "PREMIUM"
