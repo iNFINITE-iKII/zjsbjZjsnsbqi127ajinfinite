@@ -36,7 +36,7 @@ Bot Discord untuk manajemen lisensi game, dengan REST API untuk verifikasi key d
 - Slash commands didaftarkan ke guild spesifik saat bot `ready` (bukan global, lebih cepat)
 - `safeDefer` wrapper menangani Discord error 10062 (expired interaction) tanpa crash
 
-## Product
+## Gotchas
 
 - Generate, revoke, renew, transfer, dan cek lisensi key via Discord slash commands
 - HWID binding dan reset management
