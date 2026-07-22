@@ -38,7 +38,20 @@ initDb()
       logger.info({ port }, "Server listening");
     });
 
-    startBot();
+    // Bot Discord hanya dijalankan jika DISCORD_BOT_ENABLED=true.
+    // Set env var ini HANYA di Railway — jangan di Replit dev.
+    // Ini mencegah dua instance bot berjalan bersamaan (Railway + Replit)
+    // yang menyebabkan error 40060 "Interaction already acknowledged".
+    const botEnabled = process.env["DISCORD_BOT_ENABLED"] === "true";
+    if (botEnabled) {
+      logger.info("DISCORD_BOT_ENABLED=true — starting Discord bot");
+      startBot();
+    } else {
+      logger.info(
+        "DISCORD_BOT_ENABLED not set — bot disabled on this instance (API-only mode). " +
+        "Set DISCORD_BOT_ENABLED=true on Railway to enable the bot there."
+      );
+    }
   })
   .catch((err) => {
     logger.error({ err }, "Failed to initialize database");

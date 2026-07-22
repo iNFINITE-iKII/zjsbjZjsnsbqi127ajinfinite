@@ -13,12 +13,18 @@ type DeferrableInteraction =
 /**
  * Safely calls deferReply and returns true on success.
  *
- * Returns false (without throwing) when the interaction has already expired
- * (Discord error 10062 "Unknown Interaction"). This happens when Discord's
- * 3-second acknowledgement window has passed — usually because the server
- * was under load or cold-starting.
+ * Returns false (without throwing) for two known-safe Discord errors:
  *
- * Callers should guard the rest of the handler:
+ * - 10062 "Unknown Interaction": the 3-second acknowledgement window has
+ *   passed (server cold-start or overload). No reply is possible.
+ *
+ * - 40060 "Interaction has already been acknowledged": another instance of
+ *   the bot (e.g. Railway + Replit running simultaneously) already handled
+ *   this interaction. Skip silently to avoid double-processing.
+ *
+ * Any other error is re-thrown so the caller's catch block can log it.
+ *
+ * Usage:
  *   if (!await safeDefer(interaction)) return;
  */
 export async function safeDefer(
@@ -30,6 +36,7 @@ export async function safeDefer(
     return true;
   } catch (err) {
     const code = (err as { code?: number })?.code;
+
     if (code === 10062) {
       logger.warn(
         { interactionId: interaction.id },
@@ -37,8 +44,15 @@ export async function safeDefer(
       );
       return false;
     }
-    // Any other error (bad token, network, etc.) — re-throw so the caller's
-    // catch block can log it properly.
+
+    if (code === 40060) {
+      logger.warn(
+        { interactionId: interaction.id },
+        "safeDefer: interaction already acknowledged (40060) — likely duplicate bot instance, skipping"
+      );
+      return false;
+    }
+
     throw err;
   }
 }

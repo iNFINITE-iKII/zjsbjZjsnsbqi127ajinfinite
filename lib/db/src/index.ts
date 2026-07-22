@@ -11,7 +11,15 @@ if (!dbUrl) {
   );
 }
 
-export const pool = new Pool({ connectionString: dbUrl });
+// Neon free tier: batasi koneksi agar tidak menghabiskan compute quota.
+// Pooler Neon (pgBouncer) sudah menangani multiplexing, jadi pool kecil cukup.
+export const pool = new Pool({
+  connectionString: dbUrl,
+  max: 5,                    // maksimum 5 koneksi aktif sekaligus
+  idleTimeoutMillis: 10_000, // lepas koneksi idle setelah 10 detik
+  connectionTimeoutMillis: 30_000,
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
