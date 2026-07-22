@@ -17,6 +17,15 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+// Log DB host at startup (no credentials)
+const dbUrl = process.env["DATABASE_URL"] ?? "";
+try {
+  const host = new URL(dbUrl).hostname;
+  logger.info({ dbHost: host }, "Connecting to database");
+} catch {
+  logger.warn("DATABASE_URL is not set or invalid");
+}
+
 initDb()
   .then(() => {
     logger.info("Database initialized");
