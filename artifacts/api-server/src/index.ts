@@ -18,12 +18,12 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 // Log DB host at startup (no credentials)
-const dbUrl = process.env["DATABASE_URL"] ?? "";
+const dbUrl = process.env["NEON_DATABASE_URL"] ?? "";
 try {
   const host = new URL(dbUrl).hostname;
   logger.info({ dbHost: host }, "Connecting to database");
 } catch {
-  logger.warn("DATABASE_URL is not set or invalid");
+  logger.warn("NEON_DATABASE_URL is not set or invalid");
 }
 
 initDb()
